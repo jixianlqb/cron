@@ -1,1 +1,1 @@
-module github/jixianlqb/cron
+module github.com/jixianlqb/cron
