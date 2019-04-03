@@ -115,6 +115,16 @@ func (c *Cron) RemoveJob(name string) {
 	c.remove <- name
 }
 
+// job 是否在队列
+func (c *Cron) Exist(name string) bool {
+	i := c.entries.pos(name)
+
+	if i == -1 {
+		return false
+	}
+	return true
+}
+
 func (entrySlice entries) pos(name string) int {
 	for p, e := range entrySlice {
 		if e.Name == name {
