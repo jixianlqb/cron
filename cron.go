@@ -9,16 +9,21 @@ import (
 
 type entries []*Entry
 
+type operateEntry struct {
+	Name   string
+	Entry  *Entry
+	Action int // 1:add  2:del
+}
+
 // Cron keeps track of any number of entries, invoking the associated func as
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries  entries
-	stop     chan struct{}
-	add      chan *Entry
-	remove   chan string
-	snapshot chan entries
-	running  bool
+	entries     entries
+	stop        chan struct{}
+	operateChan chan *operateEntry
+	snapshot    chan entries
+	running     bool
 }
 
 // Job is an interface for submitted cron jobs.
@@ -75,12 +80,11 @@ func (s byTime) Less(i, j int) bool {
 // New returns a new Cron job runner.
 func New() *Cron {
 	return &Cron{
-		entries:  nil,
-		add:      make(chan *Entry),
-		remove:   make(chan string),
-		stop:     make(chan struct{}),
-		snapshot: make(chan entries),
-		running:  false,
+		entries:     nil,
+		operateChan: make(chan *operateEntry),
+		stop:        make(chan struct{}),
+		snapshot:    make(chan entries),
+		running:     false,
 	}
 }
 
@@ -112,7 +116,10 @@ func (c *Cron) RemoveJob(name string) {
 		return
 	}
 
-	c.remove <- name
+	c.operateChan <- &operateEntry{
+		Name:   name,
+		Action: 2,
+	}
 }
 
 // job 是否在队列
@@ -151,7 +158,11 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, name string) {
 		return
 	}
 
-	c.add <- entry
+	c.operateChan <- &operateEntry{
+		Name:   name,
+		Entry:  entry,
+		Action: 1,
+	}
 }
 
 // Entries returns a snapshot of the cron entries.
@@ -204,24 +215,17 @@ func (c *Cron) run() {
 				e.Next = e.Schedule.Next(effective)
 			}
 			continue
-
-		case newEntry := <-c.add:
-			i := c.entries.pos(newEntry.Name)
+		case operateInfo := <-c.operateChan:
+			// del
+			i := c.entries.pos(operateInfo.Name)
 			if i != -1 {
-				break
+				c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
 			}
-			c.entries = append(c.entries, newEntry)
-			newEntry.Next = newEntry.Schedule.Next(time.Now().Local())
-
-		case name := <-c.remove:
-			i := c.entries.pos(name)
-
-			if i == -1 {
-				break
+			// add
+			if operateInfo.Action == 1 {
+				c.entries = append(c.entries, operateInfo.Entry)
+				operateInfo.Entry.Next = operateInfo.Entry.Schedule.Next(time.Now().Local())
 			}
-
-			c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
-
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot()
 
@@ -229,7 +233,7 @@ func (c *Cron) run() {
 			return
 		}
 
-		// 'now' should be updated after newEntry and snapshot cases.
+		// 'now' should be updated after operateInfo and snapshot cases.
 		now = time.Now().Local()
 	}
 }
