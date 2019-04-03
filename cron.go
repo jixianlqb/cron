@@ -152,7 +152,7 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, name string) {
 	if !c.running {
 		i := c.entries.pos(entry.Name)
 		if i != -1 {
-			return
+			c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
 		}
 		c.entries = append(c.entries, entry)
 		return
@@ -202,7 +202,6 @@ func (c *Cron) run() {
 		} else {
 			effective = c.entries[0].Next
 		}
-
 		select {
 		case now = <-time.After(effective.Sub(now)):
 			// Run every entry whose next time was this effective time.
@@ -226,6 +225,7 @@ func (c *Cron) run() {
 				c.entries = append(c.entries, operateInfo.Entry)
 				operateInfo.Entry.Next = operateInfo.Entry.Schedule.Next(time.Now().Local())
 			}
+			break
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot()
 
