@@ -9,10 +9,17 @@ import (
 
 type entries []*Entry
 
+type ActionType int
+
+const (
+	ActionAdd ActionType = 1
+	ActionDel ActionType = 2
+)
+
 type operateEntry struct {
 	Name   string
 	Entry  *Entry
-	Action int // 1:add  2:del
+	Action ActionType
 }
 
 // Cron keeps track of any number of entries, invoking the associated func as
@@ -118,18 +125,8 @@ func (c *Cron) RemoveJob(name string) {
 
 	c.operateChan <- &operateEntry{
 		Name:   name,
-		Action: 2,
+		Action: ActionDel,
 	}
-}
-
-// job 是否在队列
-func (c *Cron) Exist(name string) bool {
-	i := c.entries.pos(name)
-
-	if i == -1 {
-		return false
-	}
-	return true
 }
 
 func (entrySlice entries) pos(name string) int {
@@ -161,7 +158,7 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, name string) {
 	c.operateChan <- &operateEntry{
 		Name:   name,
 		Entry:  entry,
-		Action: 1,
+		Action: ActionAdd,
 	}
 }
 
@@ -221,7 +218,7 @@ func (c *Cron) run() {
 				c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
 			}
 			// add
-			if operateInfo.Action == 1 {
+			if operateInfo.Action == ActionAdd {
 				c.entries = append(c.entries, operateInfo.Entry)
 				operateInfo.Entry.Next = operateInfo.Entry.Schedule.Next(time.Now().Local())
 			}
